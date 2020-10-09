@@ -22,7 +22,6 @@ db = SQLAlchemy(application)
 
 import models
 
-
 @application.route("/")
 def hello():
     return "Hello World!"
@@ -39,7 +38,6 @@ def login():
 
     except Exception as e:
 	    return(str(e))
-
 #--------------Users----------------------
 
 @application.route("/add_users", methods = ['POST'])
@@ -65,7 +63,7 @@ def add_users():
 def get_all_nodes():
     try:
         nodes= db.session.query(models.Node).all()
-        return  jsonify([node.serialize() for node in nodes])
+        return  jsonify([node.serial_number for node in nodes])
     except Exception as e:
 	    return(str(e))
 
@@ -90,8 +88,8 @@ def add_nodes():
 @application.route("/get_all_tests")
 def get_all_tests():
     try:
-        tests= db.session.query(models.Tests).all()
-        return  jsonify([test.serialize() for test in tests])
+        tests= db.session.query(models.Test).all()
+        return  jsonify([test.test_name for test in tests])
     except Exception as e:
 	    return(str(e))
 
@@ -136,6 +134,73 @@ def get_failed_results():
     try:
         results = db.session.query(models.NodeTestResult).filter_by(test_result="Fail").all()
         return  jsonify([result.serialize() for result in results])
+    except Exception as e:
+	    return(str(e))
+
+@application.route("/get_passed_results")
+def get_passed_results():
+    try:
+        results = db.session.query(models.NodeTestResult).filter_by(test_result="Pass").all()
+        return  jsonify([result.serialize() for result in results])
+    except Exception as e:
+	    return(str(e))
+
+@application.route("/add_excel", methods = ['POST'])
+def add_excel():
+    dic = json.loads(request.get_data())
+    node_array = dic['node_array']
+    try:
+        count=0
+        for i in node_array:
+            print(i)
+            count+=1
+            print(count)
+            if "Limits Used" not in i:
+                i["Limits Used"]= ""
+            if "Comments" not in i:
+                i["Comments"]= ""
+            if "Test Name" not in i:
+                i["Test Name"]= "Test Name Not Recorded"
+            if "Test Field" not in i:
+                i["Test Field"]= ""
+            if "Test Value" not in i:
+                i["Test Value"]= ""
+            if "Test Result" not in i:
+                i["Test Result"]= ""
+            if "Spec Name" not in i:
+                i["Spec Name"]= ""
+            if "Start Time" not in i:
+                i["Start Time"]= ""
+            if "Stop Time" not in i:
+                i["Stop Time"]= ""
+            
+            if (i["Start Time"] != "Start Time" and i["Stop Time"] != "Stop Time"):
+                ntr=models.NodeTestResult(
+                    serial_number=i["SN"],
+                    test_name=i["Test Name"],
+                    test_field=i["Test Field"],
+                    test_value=i["Test Value"],
+                    test_result=i["Test Result"],
+                    spec_name=i["Spec Name"],
+                    limits_used=i["Limits Used"],
+                    start_time=i["Start Time"],
+                    stop_time=i["Stop Time"],
+                    comments=i["Comments"]
+                )
+                if not db.session.query(models.Node).filter_by(serial_number=i["SN"]).first():
+                    nodes=models.Node(
+                        serial_number=serial_number
+                    )
+                    db.session.add(nodes)
+                if not db.session.query(models.Test).filter_by(test_name=i["Test Name"]).first():
+                    tests=models.Test(
+                        test_name=test_name
+                    )   
+                    db.session.add(tests)
+                db.session.add(ntr)
+        db.session.commit()
+        dic={"success":count}
+        return json.dumps(dic)
     except Exception as e:
 	    return(str(e))
 
