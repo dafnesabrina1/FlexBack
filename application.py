@@ -10,6 +10,7 @@ import hashlib, binascii, os
 from functools import wraps
 import pandas
 import sqlalchemy
+import re
 application = Flask(__name__)
 
 CORS(application)
@@ -26,95 +27,12 @@ import models
 def hello():
     return "Hello World!"
 
-@application.route("/login", methods=['POST'])
-def login():
-    try: 
-        dic = json.loads(request.get_data())
-        user_name = dic['user_name']
-        password = dic['password']
-        user=db.session.query(models.Users).filter(models.Users.user_name == user_name).first()
-
-        return jsonify({"id": user.id})
-
-    except Exception as e:
-	    return(str(e))
-#--------------Users----------------------
-
-@application.route("/add_users", methods = ['POST'])
-def add_users():
-    dic = json.loads(request.get_data())
-    user_name = dic['user_name']
-    password = dic['password']
-    try:
-        users=models.Users(
-            password=password,
-            user_name=user_name
-        )   
-        db.session.add(users)
-        db.session.commit()
-        dic={"usersId":str(users.id)}
-        return json.dumps(dic)
-    except Exception as e:
-	    return(str(e))
-
-#--------------Node----------------------
-
-@application.route("/get_all_nodes")
-def get_all_nodes():
-    try:
-        nodes= db.session.query(models.Node).all()
-        return  jsonify([node.serial_number for node in nodes])
-    except Exception as e:
-	    return(str(e))
-
-@application.route("/add_nodes", methods = ['POST'])
-def add_nodes():
-    dic = json.loads(request.get_data())
-    serial_number = dic['serial_number']
-
-    try:
-        nodes=models.Node(
-            serial_number=serial_number
-        )   
-        db.session.add(nodes)
-        db.session.commit()
-        dic={"serial_number":str(nodes.serial_number)}
-        return json.dumps(dic)
-    except Exception as e:
-	    return(str(e))
-
-#--------------Tests----------------------
-
-@application.route("/get_all_tests")
-def get_all_tests():
-    try:
-        tests= db.session.query(models.Test).all()
-        return  jsonify([test.test_name for test in tests])
-    except Exception as e:
-	    return(str(e))
-
-@application.route("/add_tests", methods = ['POST'])
-def add_tests():
-    dic = json.loads(request.get_data())
-    test_name = dic['test_name']
-
-    try:
-        tests=models.Test(
-            test_name=test_name
-        )   
-        db.session.add(tests)
-        db.session.commit()
-        dic={"test_name":str(tests.test_name)}
-        return json.dumps(dic)
-    except Exception as e:
-	    return(str(e))
-
 #--------------NodeTestResult----------------------
 
-@application.route("/get_all_node_test_results")
+@application.route("/get_all_tests")
 def get_all_node_test_results():
     try:
-        nodeTestResults= db.session.query(models.NodeTestResult).all()
+        nodeTestResults= db.session.query(models.Tests).all()
         return  jsonify([result.serialize() for result in nodeTestResults])
     except Exception as e:
 	    return(str(e))
@@ -122,9 +40,9 @@ def get_all_node_test_results():
 @application.route("/get_results_by_serial_number", methods=['POST'])
 def get_results_by_serial_number():
     dic = json.loads(request.get_data())
-    serialNumber=dic['serial_number']
+    serialNumber=dic['sn']
     try:
-        results = db.session.query(models.NodeTestResult).filter_by(serial_number=serialNumber).all()
+        results = db.session.query(models.Tests).filter_by(sn=serialNumber).all()
         return  jsonify([result.serialize() for result in results])
     except Exception as e:
 	    return(str(e))
@@ -132,7 +50,7 @@ def get_results_by_serial_number():
 @application.route("/get_failed_results")
 def get_failed_results():
     try:
-        results = db.session.query(models.NodeTestResult).filter_by(test_result="Fail").all()
+        results = db.session.query(models.Tests).filter_by(test_result="Fail").all()
         return  jsonify([result.serialize() for result in results])
     except Exception as e:
 	    return(str(e))
@@ -140,7 +58,15 @@ def get_failed_results():
 @application.route("/get_passed_results")
 def get_passed_results():
     try:
-        results = db.session.query(models.NodeTestResult).filter_by(test_result="Pass").all()
+        results = db.session.query(models.Tests).filter_by(test_result="Pass").all()
+        return  jsonify([result.serialize() for result in results])
+    except Exception as e:
+	    return(str(e))
+
+@application.route("/get_tests_with_limits")
+def get_tests_with_limits():
+    try:
+        results = db.session.query(models.Tests).filter(models.Tests.limits_used.isnot(None)).all()
         return  jsonify([result.serialize() for result in results])
     except Exception as e:
 	    return(str(e))
@@ -174,40 +100,32 @@ def add_excel():
             if "Stop Time" not in i:
                 i["Stop Time"]= ""
             
-            if (i["Start Time"] != "Start Time" and i["Stop Time"] != "Stop Time"):
-                ntr=models.NodeTestResult(
-                    serial_number=i["SN"],
-                    test_name=i["Test Name"],
-                    test_field=i["Test Field"],
-                    test_value=i["Test Value"],
-                    test_result=i["Test Result"],
-                    spec_name=i["Spec Name"],
-                    limits_used=i["Limits Used"],
-                    start_time=i["Start Time"],
-                    stop_time=i["Stop Time"],
-                    comments=i["Comments"]
-                )
-                if not db.session.query(models.Node).filter_by(serial_number=i["SN"]).first():
-                    nodes=models.Node(
-                        serial_number=serial_number
-                    )
-                    db.session.add(nodes)
-                if not db.session.query(models.Test).filter_by(test_name=i["Test Name"]).first():
-                    tests=models.Test(
-                        test_name=test_name
-                    )   
-                    db.session.add(tests)
-                db.session.add(ntr)
+            ntr=models.Tests(
+                sn=i["SN"],
+                s_no=i["S_NO"],
+                test_name=i["Test Name"],
+                test_field=i["Test Field"],
+                test_value=i["Test Value"],
+                test_result=i["Test Result"],
+                spec_name=i["Spec Name"],
+                limits_used=i["Limits Used"],
+                start_time=i["Start Time"],
+                stop_time=i["Stop Time"],
+                comments=i["Comments"]
+            )
+
+            db.session.add(ntr)
         db.session.commit()
         dic={"success":count}
         return json.dumps(dic)
     except Exception as e:
 	    return(str(e))
 
-@application.route("/add_node_test_results", methods = ['POST'])
+@application.route("/add_test", methods = ['POST'])
 def add_node_test_results():
     dic = json.loads(request.get_data())
-    serial_number = dic['serial_number']
+    sn = dic['sn']
+    s_no = dic['s_no']
     test_name = dic['test_name']
     test_field = dic['test_field']
     test_value = dic['test_value']
@@ -220,7 +138,8 @@ def add_node_test_results():
 
     try:
         ntr=models.NodeTestResult(
-            serial_number=serial_number,
+            sn=sn,
+            s_no=s_no,
             test_name=test_name,
             test_field=test_field,
             test_value=test_value,
@@ -233,10 +152,76 @@ def add_node_test_results():
         )   
         db.session.add(ntr)
         db.session.commit()
-        dic={"id":str(ntr.id)}
+        dic={"SN":str(ntr.sn), "S_NO": str(ntr.s_no)}
         return json.dumps(dic)
     except Exception as e:
 	    return(str(e))
+
+@application.route("/get_unique_sn")
+def get_unique_sn():
+    try: 
+        rs = db.session.query(models.Tests.sn).group_by(models.Tests.sn).all()
+        return jsonify([result.sn for result in rs])
+    except Exception as e:
+	    return(str(e))  
+
+@application.route("/last_tests_of_sn", methods=["POST"])
+def last_tests_of_sn():
+    dic = json.loads(request.get_data())
+    sn = dic['sn']
+    try: 
+        rs = db.session.query(models.Tests.limits_used, models.Tests.test_name, models.Tests.stop_time, models.Tests.test_value).filter(models.Tests.limits_used.isnot(None)).filter(models.Tests.limits_used != "").filter_by(sn=sn).order_by(models.Tests.test_name).all()
+        res= []
+        test=""
+        time=[]
+        test_to_add={}
+        count = 0
+        for i in rs:
+            count+=1
+            if test == "" and len(i.limits_used.split()) == 5:
+                test= i.test_name
+                time= re.split(r"[ :/-]+", i.stop_time)
+                test_to_add= i
+            elif i.test_name != test:
+                if test_to_add != {}:
+                    res.append(test_to_add)
+                    if len(i.limits_used.split()) == 5:
+                        test= i.test_name
+                        time= re.split(r"[ :/-]+", i.stop_time)
+                        test_to_add= i
+                    else:
+                        test = ""
+                        time=[]
+                        test_to_add={}
+            elif i.test_name == test and len(i.limits_used.split()) == 5 and older_than(time, re.split(r"[ :/-]+", i.stop_time)):
+                time= re.split(r"[ :/-]+", i.stop_time)
+                test = i.test_name
+                test_to_add= i
+        if test_to_add != {}:    
+            res.append(test_to_add)
+        return jsonify([{"limits_used": result.limits_used, "test_name": result.test_name, "stop_time": result.stop_time, "test_value": result.test_value} for result in res[:2]])
+    except Exception as e:
+	    return(str(e)) 
+
+def older_than(old, new):
+    if old == new:
+        return True
+    if old[2] < new[2]:
+        return True
+    else:
+        if old[0] < new[0]:
+            return True
+        else:
+            if old[1] < new[1]:
+                return True
+            else:
+                if old[3] < new[3]:
+                    return True
+                    if old[4] < new[4]:
+                        return True
+    return False
+
+
 
 if __name__ == '__main__':
     application.run(host='0.0.0.0', port='4000')
